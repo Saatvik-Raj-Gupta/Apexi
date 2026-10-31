@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from services.safety import (
     MAX_QUERY_PARAMS,
@@ -60,6 +60,10 @@ class ValidateResponseInput(StrictModel):
     )
 
 
+class GenerateReportInput(StrictModel):
+    task: str | None = Field(default=None, max_length=MAX_TASK_LENGTH)
+
+
 class TestResult(StrictModel):
     endpoint_id: str
     check: str
@@ -79,10 +83,19 @@ class Report(StrictModel):
     results: list[TestResult] = Field(max_length=100)
     limitations: list[str] = Field(default_factory=list, max_length=20)
 
+    @model_validator(mode="after")
+    def validate_counts(self) -> "Report":
+        if self.total_tests != len(self.results):
+            raise ValueError("total_tests must match the number of results.")
+        if self.passed + self.failed > self.total_tests:
+            raise ValueError("passed and failed counts cannot exceed total_tests.")
+        if self.overall_status in {"PASS", "FAIL"} and self.passed + self.failed != self.total_tests:
+            raise ValueError("PASS and FAIL reports cannot contain unclassified results.")
+        return self
+
     @field_validator("limitations")
     @classmethod
     def validate_limitations(cls, value: list[str]) -> list[str]:
         if any(len(item) > 500 for item in value):
             raise ValueError("Limitations are too long.")
         return value
-

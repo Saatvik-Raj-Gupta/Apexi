@@ -1,6 +1,7 @@
 """Safety policy and bounds for the deterministic first version."""
 
 MAX_TOOL_CALLS = 8
+MAX_MODEL_TURNS = MAX_TOOL_CALLS + 1
 MAX_TASK_LENGTH = 1000
 MAX_QUERY_PARAMS = 5
 MAX_QUERY_VALUE_LENGTH = 100
@@ -20,4 +21,3 @@ def redact_secrets(value: object) -> object:
     if isinstance(value, list):
         return [redact_secrets(item) for item in value]
     return value
-

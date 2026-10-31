@@ -1,14 +1,23 @@
 """Safe, deterministic tools backed by an in-app synthetic API."""
 
+from __future__ import annotations
+
 import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from agent.orchestrator import RunContext
-from agent.schemas import ListEndpointsInput, RunApiTestInput, ValidateResponseInput
+from agent.schemas import (
+    GenerateReportInput,
+    ListEndpointsInput,
+    RunApiTestInput,
+    ValidateResponseInput,
+)
 from services.reporting import build_report
 from services.safety import ALLOWED_METHODS, MAX_RESPONSE_BYTES, redact_secrets
+
+if TYPE_CHECKING:
+    from agent.orchestrator import RunContext
 
 ENDPOINTS: dict[str, dict[str, Any]] = {
     "users_list": {
@@ -37,7 +46,13 @@ ENDPOINTS: dict[str, dict[str, Any]] = {
 
 def _record_activity(context: RunContext, tool: str, args: Any, result: Any) -> None:
     context.activity.append(
-        {"tool": tool, "arguments": redact_secrets(args), "result": redact_secrets(result)}
+        {
+            "step": "tool",
+            "tool": tool,
+            "status": "success",
+            "arguments": redact_secrets(args),
+            "result": redact_secrets(result),
+        }
     )
 
 
@@ -137,7 +152,8 @@ def generate_report(
     context: RunContext, arguments: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     context.consume_tool_call()
-    task = str((arguments or {}).get("task", context.task))
+    parsed = GenerateReportInput.model_validate(arguments or {})
+    task = parsed.task or context.task
     records = [check for test in context.tests for check in test.get("checks", [])]
     result = build_report(task, records).model_dump()
     _record_activity(context, "generate_report", arguments or {}, result)
