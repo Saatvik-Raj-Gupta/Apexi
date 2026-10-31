@@ -12,6 +12,7 @@ def test_list_and_run_and_validate_and_report() -> None:
     captured = run_api_test(
         context, {"endpoint_id": "users_list", "method": "GET", "expected_status": 200}
     )
+    assert all(check["status"] == "PASS" for check in captured["checks"])
     checks = validate_response(
         context, {"test_id": captured["test_id"], "required_json_fields": ["id", "email"]}
     )

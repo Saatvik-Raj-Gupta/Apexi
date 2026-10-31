@@ -3,9 +3,11 @@
 from dataclasses import dataclass, field
 import os
 import re
+import time
 from typing import Any
 
 from dotenv import load_dotenv
+from services.safety import MAX_PROVIDER_RETRIES
 
 load_dotenv()
 
@@ -57,6 +59,14 @@ def _status_code(error: BaseException) -> int | str | None:
     return value if isinstance(value, (int, str)) and value else None
 
 
+def _is_retryable_status(value: int | str | None) -> bool:
+    try:
+        status = int(value) if value is not None else 0
+    except (TypeError, ValueError):
+        return False
+    return status == 429 or status >= 500
+
+
 @dataclass(frozen=True)
 class FunctionCall:
     name: str
@@ -68,6 +78,8 @@ class ModelResponse:
     text: str = ""
     function_calls: list[FunctionCall] = field(default_factory=list)
     model_parts: list[Any] = field(default_factory=list)
+    duration_ms: float = 0.0
+    attempts: int = 1
 
 
 class GeminiClient:
@@ -80,7 +92,7 @@ class GeminiClient:
         sdk_client: Any | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+        self.model = model or os.getenv("GEMINI_MODEL") or "gemini-3.1-flash-lite"
         self._sdk_client = sdk_client
 
     def _client(self) -> Any:
@@ -179,33 +191,43 @@ class GeminiClient:
         tool_declarations: list[dict[str, Any]],
         system_instruction: str,
     ) -> ModelResponse:
-        try:
-            from google.genai import types
+        from google.genai import types
 
-            response = self._client().models.generate_content(
-                model=self.model,
-                contents=self._to_sdk_contents(messages),
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    tools=[
-                        types.Tool(
-                            function_declarations=self._to_sdk_declarations(
-                                tool_declarations
+        started = time.perf_counter()
+        attempts = 0
+        response = None
+        while attempts <= MAX_PROVIDER_RETRIES:
+            attempts += 1
+            try:
+                response = self._client().models.generate_content(
+                    model=self.model,
+                    contents=self._to_sdk_contents(messages),
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        tools=[
+                            types.Tool(
+                                function_declarations=self._to_sdk_declarations(
+                                    tool_declarations
+                                )
                             )
-                        )
-                    ],
-                ),
-            )
-        except GeminiClientError:
-            raise
-        except Exception as exc:
-            raise GeminiClientError(
-                "Gemini request failed. The provider may be unavailable or rate-limited.",
-                code="provider_request_error",
-                provider_message=_safe_provider_message(exc, self.api_key),
-                status_code=_status_code(exc),
-                error_type=type(exc).__name__,
-            ) from exc
+                        ],
+                    ),
+                )
+                break
+            except GeminiClientError:
+                raise
+            except Exception as exc:
+                status_code = _status_code(exc)
+                if _is_retryable_status(status_code) and attempts <= MAX_PROVIDER_RETRIES:
+                    time.sleep(0.5)
+                    continue
+                raise GeminiClientError(
+                    "Gemini request failed. The provider may be unavailable or rate-limited.",
+                    code="provider_request_error",
+                    provider_message=_safe_provider_message(exc, self.api_key),
+                    status_code=status_code,
+                    error_type=type(exc).__name__,
+                ) from exc
 
         calls: list[FunctionCall] = []
         text_parts: list[str] = []
@@ -226,4 +248,6 @@ class GeminiClient:
             text="".join(text_parts).strip(),
             function_calls=calls,
             model_parts=model_parts,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            attempts=attempts,
         )

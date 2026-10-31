@@ -100,6 +100,7 @@ def run_api_test(context: RunContext, arguments: dict[str, Any]) -> dict[str, An
         "expected_status": parsed.expected_status,
         "required_json_fields": parsed.required_json_fields,
     }
+    result["checks"] = _validate_captured_response(result)
     context.tests.append(result)
     _record_activity(context, "run_api_test", arguments, result)
     return redact_secrets(result)
@@ -115,23 +116,20 @@ def _has_field(value: Any, field: str) -> bool:
     return False
 
 
-def validate_response(context: RunContext, arguments: dict[str, Any]) -> dict[str, Any]:
-    context.consume_tool_call()
-    parsed = ValidateResponseInput.model_validate(arguments)
-    captured = next((item for item in context.tests if item["test_id"] == parsed.test_id), None)
-    if captured is None:
-        raise ValueError("Unknown test ID.")
+def _validate_captured_response(captured: dict[str, Any]) -> list[dict[str, Any]]:
     checks = [
         {
             "endpoint_id": captured["endpoint_id"],
             "check": "HTTP status",
-            "status": "PASS" if captured["status_code"] == captured["expected_status"] else "FAIL",
+            "status": "PASS"
+            if captured["status_code"] == captured["expected_status"]
+            else "FAIL",
             "expected": str(captured["expected_status"]),
             "actual": str(captured["status_code"]),
             "evidence": "Observed synthetic HTTP response status.",
         }
     ]
-    for field in parsed.required_json_fields:
+    for field in captured["required_json_fields"]:
         present = _has_field(captured["body"], field)
         checks.append(
             {
@@ -143,6 +141,17 @@ def validate_response(context: RunContext, arguments: dict[str, Any]) -> dict[st
                 "evidence": "Checked the captured JSON response in Python.",
             }
         )
+    return checks
+
+
+def validate_response(context: RunContext, arguments: dict[str, Any]) -> dict[str, Any]:
+    context.consume_tool_call()
+    parsed = ValidateResponseInput.model_validate(arguments)
+    captured = next((item for item in context.tests if item["test_id"] == parsed.test_id), None)
+    if captured is None:
+        raise ValueError("Unknown test ID.")
+    captured["required_json_fields"] = parsed.required_json_fields
+    checks = _validate_captured_response(captured)
     captured["checks"] = checks
     _record_activity(context, "validate_response", arguments, {"checks": checks})
     return {"test_id": parsed.test_id, "checks": checks}

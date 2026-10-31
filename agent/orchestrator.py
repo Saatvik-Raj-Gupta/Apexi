@@ -42,6 +42,8 @@ def _record_model_activity(context: RunContext, response: Any) -> None:
                 for call in response.function_calls
             ],
             "text": response.text[:1000],
+            "duration_ms": response.duration_ms,
+            "attempts": response.attempts,
         }
     )
 

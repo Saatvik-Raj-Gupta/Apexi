@@ -94,7 +94,7 @@ arbitrary query parameters to Gemini because the Google function-calling schema
 does not accept `additionalProperties` for open-ended object fields.
 
 Set `GEMINI_MODEL` in `.env` to select the model. If it is omitted, the client
-uses `gemini-2.5-flash`.
+uses `gemini-3.1-flash-lite`.
 
 Function results are converted to Gemini-compatible user content parts before
 being sent. The internal orchestrator may label these messages as `tool`, but
@@ -105,3 +105,21 @@ The provider adapter also retains the SDK's complete model parts between turns,
 including any `thoughtSignature`, instead of rebuilding function-call parts
 from only the function name and arguments. This is required by newer Gemini
 models during sequential function calling.
+
+For lower latency and lower free-tier usage, the default model is the
+configurable `gemini-3.1-flash-lite`. Provider retries are limited to one retry
+for HTTP 429 and 5xx responses; schema and other 4xx errors are not retried.
+Response timing and retry counts are visible in the activity timeline.
+
+The fast path is now:
+
+```text
+Gemini selects endpoint/test
+→ Python executes and validates the test immediately
+→ Gemini returns a concise summary
+```
+
+`validate_response` and `generate_report` remain available as trusted Python
+tools for direct use and tests, but are no longer advertised to Gemini. This
+avoids unnecessary model round trips; report counts continue to be calculated
+by Python.

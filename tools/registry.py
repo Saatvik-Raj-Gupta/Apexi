@@ -37,26 +37,6 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
             "required": ["endpoint_id", "expected_status"],
         },
     },
-    {
-        "name": "validate_response",
-        "description": "Deterministically validate a captured response and required JSON fields.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "test_id": {"type": "string"},
-                "required_json_fields": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["test_id"],
-        },
-    },
-    {
-        "name": "generate_report",
-        "description": "Create a report whose counts are computed from captured test evidence.",
-        "parameters": {
-            "type": "object",
-            "properties": {"task": {"type": "string"}},
-        },
-    },
 ]
 
 

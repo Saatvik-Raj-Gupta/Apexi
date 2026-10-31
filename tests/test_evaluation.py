@@ -134,6 +134,38 @@ def test_model_is_loaded_from_environment(monkeypatch) -> None:
     assert GeminiClient(api_key="test").model == "configured-model"
 
 
+def test_default_model_is_lite(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert GeminiClient(api_key="test").model == "gemini-3.1-flash-lite"
+
+
+def test_transient_provider_error_is_retried_once(monkeypatch) -> None:
+    monkeypatch.setattr("services.llm_client.time.sleep", lambda _: None)
+
+    class ProviderError(Exception):
+        status_code = 503
+
+    class Models:
+        calls = 0
+
+        def generate_content(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderError("temporarily unavailable")
+            return type("Response", (), {"candidates": []})()
+
+    models = Models()
+
+    class SDK:
+        pass
+
+    sdk = SDK()
+    sdk.models = models
+    response = GeminiClient(api_key="test", sdk_client=sdk).generate([], [], "system")
+    assert response.attempts == 2
+    assert models.calls == 2
+
+
 def test_function_responses_use_gemini_user_role() -> None:
     contents = GeminiClient._to_sdk_contents(
         [
