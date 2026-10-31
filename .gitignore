@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+#General
+DEPLOYMENT.md
+IMPLEMENTATION_PLAN.md
+PROJECT_SPEC.md
+TEST_PLAN.md
+README_TEMPLATE.md
